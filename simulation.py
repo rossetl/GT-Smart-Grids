@@ -5,6 +5,7 @@ from scipy.optimize import minimize
 from scipy.stats import poisson
 from utils import optimize_e, optimize_b
 import sys
+import multiprocessing as mp
 
 with open('parameters.txt') as f:
     raw_par = f.read()
@@ -39,28 +40,40 @@ p = market_price(l.sum(axis=0) - b_pm[:, T:].sum(axis=0) + b_pm[:, :T].sum(axis=
 p_history = np.append(p_history, [p], axis=0)
 e_history = np.append(e_history, e.sum())
 
+pool = mp.Pool(mp.cpu_count())
+e_opt_dict = {}
+b_opt_dict = {}
 for d in range(par['n_days']):
     profiles = np.ndarray((par['n_nodes'], T))
+
+    # optimize e
     for n in range(par['n_nodes']):
-        # optimize e
-        e_opt = optimize_e(n, b_pm, p, l, c, e0)
-        # update e
-        e[n] = e[n] + par['beta_1']*(e_opt - e[n])
-        # optimize b
-        b_opt = optimize_b(n, par['b_sup'], par['b_inf'], p, c, par['alpha'], e0, e, l)
-        # update b
-        b_pm[n, :] = b_pm[n, :] + par['beta_2'] * (b_opt - b_pm[n, :])
-        # update e0
-        e0[n] = e0[n] + b_pm[n, :T].sum() - b_pm[n, T:].sum()
-        
-        profiles[n, :] = b_pm[n, :T] - b_pm[n, T:]
-        print('completed node {n}/{n_nodes} of day {d}/{n_days}'.format(n=n+1, n_nodes=par['n_nodes'], d=d+1, n_days=par['n_days']), end='\r')
-        sys.stdout.flush()
-    b_history = np.append(b_history, [np.mean(profiles, axis=0)], axis=0)
+        e_opt_dict[n] = pool.apply_async(optimize_e, args=(n, b_pm, p, l, c, e0))
+    e_opt = np.array([e_opt_dict[n].get(timeout=180) for n in range(par['n_nodes'])])
+
+    # update e
+    e = e + par['beta_1']*(e_opt - e)
+
+    # optimize b
+    for n in range(par['n_nodes']):
+        b_opt_dict[n] = pool.apply_async(optimize_b, args=(n, par['b_sup'], par['b_inf'], p, c, par['alpha'], e0, e, l))
+    b_opt = np.array([b_opt_dict[n].get(timeout=180) for n in range(par['n_nodes'])])
+
+    # update b
+    b_pm = b_pm + par['beta_2'] * (b_opt - b_pm)
+
+    # update e0
+    e0 = e0 + b_pm[:, :T].sum() - b_pm[:, T:].sum()
+
+    b_history = np.append(b_history, [np.mean(b_pm[:, :T] - b_pm[:, T:], axis=0)], axis=0)
     p = market_price(l.sum(axis=0) - b_pm[:, T:].sum(axis=0) + b_pm[:, :T].sum(axis=0))
     p_history = np.append(p_history, [p], axis=0)
     e_history = np.append(e_history, e.sum())
+    print('completed day {d}/{n_days}'.format(d=d+1, n_days=par['n_days']))
+pool.close()
 
 np.save('Results/storage_profile.npy', b_history)
 np.save('Results/market_prices.npy', p_history)
 np.save('Results/storage.npy', e_history)
+
+print('simulation completed!')

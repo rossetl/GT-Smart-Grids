@@ -28,7 +28,7 @@ def u_e(e, b_pm, p, l, c):
     """
     return np.sum(p * (b_pm[:T] - b_pm[T:] + l)) + c*e
 
-def optimize_e(n, b_pm, p, l, c, e0):
+def optimize_e_old(n, b_pm, p, l, c, e0):
     """
     n: customer's index
     """
@@ -41,7 +41,7 @@ def optimize_e(n, b_pm, p, l, c, e0):
     e_opt = minimize_scalar(u_e, args=(b_pm[n, :], p, l[n, :], c[n]),
         method='Bounded',
         bounds=(constr_e, 5.))
-    return e_opt.x
+    return e_opt.x    
 
 def constr_matrix_b(alpha):
     """
@@ -74,7 +74,7 @@ def constr_matrix_b(alpha):
 
     return np.vstack([mat1, mat2, mat3, mat4, mat5, mat3])
 
-def constr_vectors_b(n, b_sup, b_inf, alpha, e0, e, l):
+def constr_vectors_b(b_sup, b_inf, alpha, e0, e, l):
     """
     n: customer's index
     """
@@ -87,21 +87,23 @@ def constr_vectors_b(n, b_sup, b_inf, alpha, e0, e, l):
     leftv_constr = np.concatenate([leftv1, leftv2, leftv3, leftv4, leftv5, leftv3])
 
     # right
-    rightv_constr = np.concatenate([[0], [b_sup] * T, [b_inf] * T, [alpha * e0[0]] * T, [e[0] - e0[0]] * T, l[0, :]])
+    rightv_constr = np.concatenate([[0], [b_sup] * T, [b_inf] * T, [alpha * e0] * T, [e - e0] * T, l])
     return leftv_constr, rightv_constr
 
-def optimize_b(n, b_sup, b_inf, p, c, alpha, e0, e, l):
-    """
-    n: customer's index
-    """
+def optimize_b(b_sup, b_inf, p, c, alpha, e0, e, l):
     mat_constr = constr_matrix_b(alpha)
-    leftv_constr, rightv_constr = constr_vectors_b(n, b_sup, b_inf, alpha, e0, e, l)
+    leftv_constr, rightv_constr = constr_vectors_b(b_sup, b_inf, alpha, e0, e, l)
     linear_constraint = LinearConstraint(mat_constr, leftv_constr, rightv_constr)
     bounds = Bounds([0] * 2 * T, [max(b_sup, b_inf)] * 2 * T)
     x0 = np.zeros(2 * T)
-    b_opt = minimize(u_b, x0, args=(p, l[n, :], c[n], e[n]), method='trust-constr',
+    b_opt = minimize(u_b, x0, args=(p, l, c, e), method='trust-constr',
         constraints=linear_constraint,
         bounds=bounds,
         #options={'factorization_method' : 'SVDFactorization', 'verbose' : 0})
         options={'verbose' : 0})
     return b_opt.x
+
+def best_u_e(b_sup, b_inf, p, c, alpha, e0, e, l):
+    b_opt = optimize_b(b_sup, b_inf, p, c, alpha, e0, e, l)
+    return u_b(b_opt, p, l, c, e)
+    

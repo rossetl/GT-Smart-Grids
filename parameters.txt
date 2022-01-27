@@ -1,6 +1,6 @@
 {
     "n_nodes" : 20,
-    "n_days" : 5,
+    "n_days" : 50,
     "beta_1" : 0.05,
     "beta_2" : 0.05,
     "b_inf" : 0.2,

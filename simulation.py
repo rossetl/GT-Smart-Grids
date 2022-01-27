@@ -5,7 +5,8 @@ from scipy.optimize import minimize
 from scipy.stats import poisson
 from utils import optimize_e, optimize_b
 import sys
-import multiprocessing as mp
+from joblib import Parallel, delayed
+import time
 
 with open('parameters.txt') as f:
     raw_par = f.read()
@@ -40,24 +41,23 @@ p = market_price(l.sum(axis=0) - b_pm[:, T:].sum(axis=0) + b_pm[:, :T].sum(axis=
 p_history = np.append(p_history, [p], axis=0)
 e_history = np.append(e_history, e.sum())
 
-pool = mp.Pool(mp.cpu_count())
-e_opt_dict = {}
-b_opt_dict = {}
 for d in range(par['n_days']):
+    t_start = time.time()
     profiles = np.ndarray((par['n_nodes'], T))
-
+    b_opt = np.ndarray(shape=(0, 2*T))
     # optimize e
-    for n in range(par['n_nodes']):
-        e_opt_dict[n] = pool.apply_async(optimize_e, args=(n, b_pm, p, l, c, e0))
-    e_opt = np.array([e_opt_dict[n].get(timeout=180) for n in range(par['n_nodes'])])
+    with Parallel(n_jobs=par['n_nodes']) as parallel:
+        e_opt = parallel(delayed(optimize_e)(n, b_pm, p, l, c, e0) for n in range(par['n_nodes']))
+    e_opt = np.array(e_opt)
 
     # update e
     e = e + par['beta_1']*(e_opt - e)
 
     # optimize b
+    with Parallel(n_jobs=par['n_nodes']) as parallel:
+        b_opt_list = parallel(delayed(optimize_b)(n, par['b_sup'], par['b_inf'], p, c, par['alpha'], e0, e, l) for n in range(par['n_nodes']))
     for n in range(par['n_nodes']):
-        b_opt_dict[n] = pool.apply_async(optimize_b, args=(n, par['b_sup'], par['b_inf'], p, c, par['alpha'], e0, e, l))
-    b_opt = np.array([b_opt_dict[n].get(timeout=180) for n in range(par['n_nodes'])])
+        b_opt = np.append(b_opt, [b_opt_list[n]], axis=0)
 
     # update b
     b_pm = b_pm + par['beta_2'] * (b_opt - b_pm)
@@ -69,8 +69,9 @@ for d in range(par['n_days']):
     p = market_price(l.sum(axis=0) - b_pm[:, T:].sum(axis=0) + b_pm[:, :T].sum(axis=0))
     p_history = np.append(p_history, [p], axis=0)
     e_history = np.append(e_history, e.sum())
-    print('completed day {d}/{n_days}'.format(d=d+1, n_days=par['n_days']))
-pool.close()
+    t_stop = time.time()
+    time_elapsed = round((t_stop - t_start)/60, 2)
+    print('completed day {d}/{n_days} in {mins} min'.format(d=d+1, n_days=par['n_days'], mins=time_elapsed))
 
 np.save('Results/storage_profile.npy', b_history)
 np.save('Results/market_prices.npy', p_history)

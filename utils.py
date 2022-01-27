@@ -102,5 +102,6 @@ def optimize_b(n, b_sup, b_inf, p, c, alpha, e0, e, l):
     b_opt = minimize(u_b, x0, args=(p, l[n, :], c[n], e[n]), method='trust-constr',
         constraints=linear_constraint,
         bounds=bounds,
-        options={'factorization_method' : 'SVDFactorization', 'verbose' : 0})
+        #options={'factorization_method' : 'SVDFactorization', 'verbose' : 0})
+        options={'verbose' : 0})
     return b_opt.x

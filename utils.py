@@ -59,20 +59,18 @@ def constr_matrix_b(alpha):
 
     # energy that can be stored or used at a time slot
     mat4 = np.zeros(shape=(T, 2*T), dtype='float')
-    mat4[0, T] = 1
     for i in range(1, T):
-        for j in range(i):
-            mat4[i, j] = -alpha
-            mat4[i, j+T] = alpha
-        mat4[i-1, i-1+T] = 1
+        mat4[i, :i] = -alpha
+        mat4[i, T:T+i] = alpha
+    for i in range(T):
+        mat4[i, T+i] = 1
 
     mat5 = np.zeros(shape=(T, 2*T), dtype='float')
-    mat5[0, 0] = 1
     for i in range(1, T):
-        for j in range(i):
-            mat5[i, j] = 1
-            mat5[i, j+T] = -1
-        mat5[i-1, i-1] = 1    
+        mat5[i, :i] = 1
+        mat5[i, T:T+i] = -1
+    for i in range(T):
+        mat5[i, i] = 1    
 
     return np.vstack([mat1, mat2, mat3, mat4, mat5, mat3])
 
@@ -81,11 +79,15 @@ def constr_vectors_b(n, b_sup, b_inf, alpha, e0, e, l):
     n: customer's index
     """
     # left
-    leftv_constr = - np.ones(241) * np.inf
-    leftv_constr[0] = 0
+    leftv1 = np.zeros(1)          # bilateral
+    leftv2 = np.zeros(T)          # bilateral
+    leftv3 = np.zeros(T)          # bilateral
+    leftv4 = -np.ones(T)*np.inf   # unilateral
+    leftv5 = -np.ones(T)*np.inf   # unilateral
+    leftv_constr = np.concatenate([leftv1, leftv2, leftv3, leftv4, leftv5, leftv3])
 
     # right
-    rightv_constr = np.concatenate([[0], [b_sup] * T, [b_inf] * T, [alpha * e0[n]] * T, [e[n] - e0[n]] * T, l[n, :]])
+    rightv_constr = np.concatenate([[0], [b_sup] * T, [b_inf] * T, [alpha * e0[0]] * T, [e[0] - e0[0]] * T, l[0, :]])
     return leftv_constr, rightv_constr
 
 def optimize_b(n, b_sup, b_inf, p, c, alpha, e0, e, l):
@@ -100,5 +102,5 @@ def optimize_b(n, b_sup, b_inf, p, c, alpha, e0, e, l):
     b_opt = minimize(u_b, x0, args=(p, l[n, :], c[n], e[n]), method='trust-constr',
         constraints=linear_constraint,
         bounds=bounds,
-        options={'verbose' : 0})
+        options={'factorization_method' : 'SVDFactorization', 'verbose' : 0})
     return b_opt.x
